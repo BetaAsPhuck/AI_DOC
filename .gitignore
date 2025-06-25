@@ -1,0 +1,6 @@
+# Ignore runtime files
+health_data.db
+health_log.csv
+memory.json
+__pycache__/
+*.pyc
