@@ -12,15 +12,16 @@ DB_NAME = "health_data.db"
 def run_proactive_glucose_check():
     target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute('''
-        SELECT timestamp, glucose_value FROM glucose
-        WHERE date(timestamp) = ?
-    ''', (target_date,))
-    readings = c.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT timestamp, glucose_value FROM glucose
+            WHERE date(timestamp) = ?
+            """,
+            (target_date,),
+        )
+        readings = c.fetchall()
 
     if not readings:
         return f"📅 {target_date}: Nema dostupnih merenja glukoze."
@@ -71,106 +72,96 @@ def run_proactive_glucose_check():
     return final_prompt
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
 
-    # Tabela za navike
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS habits (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            description TEXT,
-            start_date TEXT
-        )
-    ''')
+        # Tabela za navike
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS habits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                description TEXT,
+                start_date TEXT
+            )
+        ''')
 
     # Tabela za dnevne upise korisnika
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS check_ins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            user_input TEXT
-        )
-    ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS check_ins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                user_input TEXT
+            )
+        ''')
 
     # Tabela za AI odgovore
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS ai_responses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            ai_text TEXT
-        )
-    ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ai_responses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                ai_text TEXT
+            )
+        ''')
 
     # Tabela za glukozu
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS glucose (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT UNIQUE,
-            glucose_value INTEGER,
-            source TEXT
-        )
-    ''')       
-    # Tabela za dnevne navike i komentare
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS daily_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT UNIQUE,
-            meals INTEGER,
-            comment TEXT,
-            rating INTEGER
-        )
-    ''')
-
-    
-
-    conn.commit()
-    conn.close()
-
-def save_check_in(user_input):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("INSERT INTO check_ins (timestamp, user_input) VALUES (?, ?)",
-              (datetime.now().isoformat(), user_input))
-    conn.commit()
-    conn.close()
-
-def save_ai_response(ai_text):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("INSERT INTO ai_responses (timestamp, ai_text) VALUES (?, ?)",
-              (datetime.now().isoformat(), ai_text))
-    conn.commit()
-    conn.close()
-
-def add_habit(name, description):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("INSERT INTO habits (name, description, start_date) VALUES (?, ?, ?)",
-              (name, description, datetime.now().date().isoformat()))
-    conn.commit()
-    conn.close()
-
-def insert_glucose_entry(timestamp, glucose_value, source="nightscout"):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    try:
         c.execute('''
-            INSERT OR IGNORE INTO glucose (timestamp, glucose_value, source)
-            VALUES (?, ?, ?)
-        ''', (timestamp, glucose_value, source))
+            CREATE TABLE IF NOT EXISTS glucose (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT UNIQUE,
+                glucose_value INTEGER,
+                source TEXT
+            )
+        ''')
+        # Tabela za dnevne navike i komentare
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS daily_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT UNIQUE,
+                meals INTEGER,
+                comment TEXT,
+                rating INTEGER
+            )
+        ''')
         conn.commit()
 
-        if c.rowcount == 0:
-            print(f"⚠️  Preskočeno - već postoji unos za: {timestamp}")
-        else:
-            print(f"✅ Unet zapis: {timestamp} | {glucose_value} mmol/L")
+def save_check_in(user_input):
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.execute(
+            "INSERT INTO check_ins (timestamp, user_input) VALUES (?, ?)",
+            (datetime.now().isoformat(), user_input),
+        )
 
+def save_ai_response(ai_text):
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.execute(
+            "INSERT INTO ai_responses (timestamp, ai_text) VALUES (?, ?)",
+            (datetime.now().isoformat(), ai_text),
+        )
+
+def add_habit(name, description):
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.execute(
+            "INSERT INTO habits (name, description, start_date) VALUES (?, ?, ?)",
+            (name, description, datetime.now().date().isoformat()),
+        )
+
+def insert_glucose_entry(timestamp, glucose_value, source="nightscout"):
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO glucose (timestamp, glucose_value, source)
+                VALUES (?, ?, ?)
+                """,
+                (timestamp, glucose_value, source),
+            )
+            if cur.rowcount == 0:
+                print(f"⚠️  Preskočeno - već postoji unos za: {timestamp}")
+            else:
+                print(f"✅ Unet zapis: {timestamp} | {glucose_value} mmol/L")
     except Exception as e:
         print(f"❌ Greška pri upisu: {e}")
-    finally:
-        conn.close()
 
 def store_glucose_from_nightscout():
     response = requests.get(NIGHTSCOUT_URL)
@@ -194,15 +185,15 @@ def store_glucose_from_nightscout():
         print("❌ Nije moguće dohvatiti podatke sa Nightscout servera.")
 
 def get_recent_glucose(days=3):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('''
-        SELECT timestamp, glucose_value FROM glucose
-        WHERE timestamp >= datetime('now', ?)
-        ORDER BY timestamp DESC
-    ''', (f'-{days} days',))
-    rows = c.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_NAME) as conn:
+        rows = conn.execute(
+            """
+            SELECT timestamp, glucose_value FROM glucose
+            WHERE timestamp >= datetime('now', ?)
+            ORDER BY timestamp DESC
+            """,
+            (f"-{days} days",),
+        ).fetchall()
 
 
 
@@ -223,18 +214,18 @@ def get_recent_glucose(days=3):
     return converted
 
 def log_daily_info(date, meals, comment, rating):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('''
-        INSERT OR REPLACE INTO daily_logs (date, meals, comment, rating)
-        VALUES (?, ?, ?, ?)
-    ''', (date, meals, comment, rating))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO daily_logs (date, meals, comment, rating)
+            VALUES (?, ?, ?, ?)
+            """,
+            (date, meals, comment, rating),
+        )
 
 def generate_daily_report(date):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+    with sqlite3.connect(DB_NAME) as conn:
+        c = conn.cursor()
 
     # Glukoza za taj dan
     c.execute('''
@@ -288,8 +279,6 @@ def generate_daily_report(date):
     comment = log[1] if log else None
     rating = log[2] if log else None
 
-    conn.close()
-
     # JSON format za AI
     report = {
         "date": date,
@@ -311,14 +300,14 @@ def generate_daily_report(date):
 
 
 def calculate_tir_over_period(days, lower_bound=4.0, upper_bound=10.0):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('''
-        SELECT glucose_value FROM glucose
-        WHERE timestamp >= datetime('now', ?)
-    ''', (f'-{days} days',))
-    readings = c.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_NAME) as conn:
+        readings = conn.execute(
+            """
+            SELECT glucose_value FROM glucose
+            WHERE timestamp >= datetime('now', ?)
+            """,
+            (f"-{days} days",),
+        ).fetchall()
 
     if not readings:
         return f"📆 {days} dana: nema podataka."

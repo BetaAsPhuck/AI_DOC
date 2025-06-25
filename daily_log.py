@@ -1,6 +1,5 @@
 from core.database import log_daily_info, generate_daily_report
 from datetime import datetime, timedelta
-2
 print("\n📅 Unos dnevnog izveštaja")
 print("1️⃣ Danas")
 print("2️⃣ Juče")
